@@ -5,17 +5,22 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "mlx-tm"
 version = "0.1.0"
-description = "Tsetlin Machines on the Apple GPU (MLX), with a Metal bit-plane training kernel"
+description = "Tsetlin Machines on the Apple GPU (MLX) — macOS / Apple Silicon only"
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.10"
 authors = [{ name = "Guillaume Godin" }]
-keywords = ["tsetlin-machine", "mlx", "apple-silicon", "metal", "gpu", "interpretable-ml"]
+keywords = ["tsetlin-machine", "mlx", "apple-silicon", "metal", "gpu", "interpretable-ml", "macos"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: MIT License",
+    "Operating System :: MacOS",
+    "Environment :: GPU",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 dependencies = ["mlx>=0.20.0", "numpy"]
