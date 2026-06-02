@@ -29,8 +29,8 @@ from __future__ import annotations
 import numpy as np
 import mlx.core as mx
 
-from tsetlin_mlx.dense import DenseTsetlinMachine
-from tsetlin_mlx.bitpacked import packed_eval as _packed_eval
+from .dense import DenseTsetlinMachine
+from .bitpacked import packed_eval as _packed_eval
 
 
 class CoalescedTsetlinMachine(DenseTsetlinMachine):
