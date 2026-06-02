@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mlx-tm"
+version = "0.1.0"
+description = "Tsetlin Machines on the Apple GPU (MLX), with a Metal bit-plane training kernel"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+authors = [{ name = "Guillaume Godin" }]
+keywords = ["tsetlin-machine", "mlx", "apple-silicon", "metal", "gpu", "interpretable-ml"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = ["mlx>=0.20.0", "numpy"]
+
+[project.optional-dependencies]
+# GaussianizeBinarizer/GMMBinarizer need scikit-learn; RotationBinarizer 'hadamard' needs scipy.
+test = ["pytest>=7", "scikit-learn", "scipy"]
+examples = ["scikit-learn", "scipy", "rdkit>=2023.3"]
+
+[project.urls]
+Homepage = "https://github.com/guillaume-osmo/mlxTM"
+Repository = "https://github.com/guillaume-osmo/mlxTM"
+
+[tool.setuptools.packages.find]
+include = ["mlx_tm*"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
