@@ -144,6 +144,7 @@ opioid-target datasets (MDR1, MOR).
 | representation → bits | MDR1 | MOR |
 |---|---|---|
 | ECFP-2048 (presence) | 0.974 | 0.933 |
+| ECFP-2048 **count** → thermometer ×3 | 0.976 | 0.933 |
 | RDKit2D-217 → RPCholesky-128 → thermometer | 0.973 | 0.887 |
 | Osmordred-3585 → RPCholesky-1024 → thermometer | **0.980** | 0.913 |
 | molFTP 27-d aggregate → thermometer | 0.960 | 0.916 |
@@ -158,14 +159,18 @@ MOR; RPCholesky on those sparse keys throws signal away (0.828). Net for lakes, 
 
 | features → TM | MDR1 | MOR |
 |---|---|---|
-| ECFP-2048 | 0.964 | 0.899 |
+| ECFP-2048 (presence) | 0.964 | 0.899 |
+| ECFP-2048 **count** → thermometer ×3 | **0.972** | 0.895 |
 | molFTP 27-d aggregate | 0.960 | **0.914** |
-| molFTP significance-top-1024 ×2-bit | **0.965** | 0.900 |
+| molFTP significance-top-1024 ×2-bit | 0.965 | 0.900 |
 | molFTP RPCholesky-1024 ×2-bit | 0.922 | 0.637 |
 
 *Read it as:* molFTP ≥ ECFP on the rule-learner itself; RPCholesky **collapses** on MOR (0.637) —
-the two-regime rule in a single number. (Small TM config, so absolutes sit a touch below the LR
-probe; the permutation test confirmed the held-out scores aren't leaking.)
+the two-regime rule in a single number. And **substructure counts help the rule-learner**
+(MDR1 0.964 → 0.972) more than they help the linear probe — the TM can write rules like
+*"this fragment occurs ≥ 2 times"* — though the gain is target-dependent (neutral on MOR). (Small
+TM config, so absolutes sit a touch below the LR probe; a permutation test confirmed the held-out
+scores aren't leaking.)
 
 ## A cheat-sheet for the ML crowd
 
@@ -187,5 +192,5 @@ pip install -e .            # macOS / Apple Silicon only (MLX has no Linux/Windo
 python examples/noisy_xor.py
 ```
 
-Five GPU backends, the feature utilities (binarizers, RPCholesky), 26 passing tests, MIT-licensed.
+Five GPU backends, the feature utilities (binarizers, RPCholesky), 27 passing tests, MIT-licensed.
 Kick the tires, and tell me where it breaks.

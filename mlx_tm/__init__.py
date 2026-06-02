@@ -30,6 +30,7 @@ from .binarize import (
     GaussianizeBinarizer,
     GMMBinarizer,
     RotationBinarizer,
+    count_thermometer,
 )
 from .feature_select import rpcholesky_select
 
@@ -47,6 +48,7 @@ __all__ = [
     "GaussianizeBinarizer",
     "GMMBinarizer",
     "RotationBinarizer",
+    "count_thermometer",
     "rpcholesky_select",
     "pack_bits_uint32",
     "packed_eval",

@@ -218,3 +218,15 @@ class RotationBinarizer:
 
     def fit_transform(self, X) -> np.ndarray:
         return self.fit(X).transform(X)
+
+
+def count_thermometer(counts, max_count: int = 3) -> np.ndarray:
+    """Count fingerprint -> bits via a count thermometer: bit_k = (count >= k), k = 1..max_count.
+
+    The `count >= 1` bit reproduces a binary (presence) fingerprint; higher k encode substructure
+    MULTIPLICITY — literals like "this fragment occurs >= 2 times", which a Tsetlin Machine can use
+    directly. Input: (n, F) integer counts (e.g. a Morgan count fingerprint). Output: (n, F*max_count).
+    """
+    counts = np.asarray(counts)
+    return np.concatenate(
+        [(counts >= k).astype(np.int8) for k in range(1, max_count + 1)], axis=1)
