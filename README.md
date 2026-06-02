@@ -9,6 +9,13 @@ The reference Tsetlin stacks ([cair/tmu](https://github.com/cair/tmu),
 [PyTsetlinMachineCUDA](https://github.com/cair/PyTsetlinMachineCUDA)) are CUDA-only and do not run
 on Apple Silicon. `mlx-tm` is native Metal/MLX.
 
+> **⚠️ macOS / Apple Silicon only.** This package builds on [MLX](https://github.com/ml-explore/mlx),
+> which ships only Apple-Silicon (`macosx_arm64`) wheels — there are no Linux or Windows builds.
+> `pip install mlx-tm` will only resolve on an Apple-Silicon Mac.
+
+📖 **New here?** Read the friendly intro — *[Rules, not weights](docs/launch-post.md)* — for the
+what/why with analogies (and the molecular-feature story behind it).
+
 ## Install
 
 ```bash
