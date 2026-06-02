@@ -29,8 +29,8 @@ from __future__ import annotations
 import numpy as np
 import mlx.core as mx
 
-from .dense import DenseTsetlinMachine
-from .bitpacked import packed_eval as _packed_eval
+from tsetlin_mlx.dense import DenseTsetlinMachine
+from tsetlin_mlx.bitpacked import packed_eval as _packed_eval
 
 
 class CoalescedTsetlinMachine(DenseTsetlinMachine):
@@ -134,7 +134,7 @@ class CoalescedTsetlinMachine(DenseTsetlinMachine):
 
     def fit(self, X, Y, epochs: int = 1, incremental: bool = False,
             shuffle: bool = True, eval_every: int = 64, verbose: int = 0):
-        """verbose: 0=silent, 1=one line per epoch, 2=epoch + example-level every eval_every."""
+        """verbose: 0=silent, 1=epoch-level, 2=epoch+example every eval_every steps."""
         import time as _time
         Xm = mx.array(np.asarray(X), dtype=mx.float32)
         Yn = np.asarray(Y).astype(np.int32)
@@ -151,11 +151,14 @@ class CoalescedTsetlinMachine(DenseTsetlinMachine):
             for step, i in enumerate(idx):
                 self._update_example(lits[int(i)], int(Yn[i]))
                 if (step + 1) % eval_every == 0:
-                    mx.eval(self.ta, self.W)
+                    mx.eval(self.ta, self.W)    # flush graph; prevents unbounded graph growth
                     if verbose >= 2:
                         print(f"  ep {ep+1}/{epochs}  ex {step+1}/{n}  "
                               f"({_time.time()-t0:.0f}s)", flush=True)
-            mx.eval(self.ta, self.W)
+            mx.eval(self.ta, self.W)            # flush at end of every epoch
             if verbose >= 1:
                 print(f"  epoch {ep+1}/{epochs}  ({_time.time()-t0:.0f}s)", flush=True)
+            # Hard flush every 5 epochs to prevent graph accumulation across epochs
+            if (ep + 1) % 5 == 0:
+                import gc; gc.collect()
         return self

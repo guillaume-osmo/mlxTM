@@ -155,22 +155,20 @@ opioid-target datasets (MDR1, MOR).
 *Read it as:* feature hashing keeps the full molFTP signal (0.940 ≈ full 0.943) and beats ECFP on
 MOR; RPCholesky on those sparse keys throws signal away (0.828). Net for lakes, magnet for needles.
 
-**On the actual Tsetlin Machine** (coalesced, a deliberately small 400-clause / 20-epoch config):
+**On the actual Tsetlin Machine** (coalesced, 800 clauses / 30 epochs, 5-fold CV):
 
 | features → TM | MDR1 | MOR |
 |---|---|---|
-| ECFP-2048 (presence) | 0.964 | 0.899 |
-| ECFP-2048 **count** → thermometer ×3 | **0.972** | 0.895 |
-| molFTP 27-d aggregate | 0.960 | **0.914** |
-| molFTP significance-top-1024 ×2-bit | 0.965 | 0.900 |
-| molFTP RPCholesky-1024 ×2-bit | 0.922 | 0.637 |
+| ECFP-2048 **count** → thermo ×3 | **0.970** | 0.911 |
+| ECFP-2048 (presence) | 0.964 | 0.918 |
+| molFTP sig-top-1024 ×2-bit | 0.963 | 0.916 |
+| molFTP 27-d aggregate | 0.956 | **0.913** |
+| molFTP RPCholesky-1024 ×2-bit | 0.927 | 0.656 |
 
-*Read it as:* molFTP ≥ ECFP on the rule-learner itself; RPCholesky **collapses** on MOR (0.637) —
-the two-regime rule in a single number. And **substructure counts help the rule-learner**
-(MDR1 0.964 → 0.972) more than they help the linear probe — the TM can write rules like
-*"this fragment occurs ≥ 2 times"* — though the gain is target-dependent (neutral on MOR). (Small
-TM config, so absolutes sit a touch below the LR probe; a permutation test confirmed the held-out
-scores aren't leaking.)
+*Read it as:* **substructure counts lift MDR1** (0.964 → 0.970) — the TM can write rules like
+*"this ring occurs ≥ 2 times"* — but **count doesn't help MOR** (harder target). molFTP ≥ ECFP
+on both; molFTP-27 leads on MOR despite being just 27 numbers. RPCholesky **collapses on MOR
+(0.656)** — the two-regime rule in one number. A permutation test confirmed no leakage.
 
 ## A cheat-sheet for the ML crowd
 
