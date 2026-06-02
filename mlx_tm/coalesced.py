@@ -133,7 +133,9 @@ class CoalescedTsetlinMachine(DenseTsetlinMachine):
             self._set_weight_row(nt, mx.maximum(w_n - dec, -self.max_weight))
 
     def fit(self, X, Y, epochs: int = 1, incremental: bool = False,
-            shuffle: bool = True, eval_every: int = 64):
+            shuffle: bool = True, eval_every: int = 64, verbose: int = 0):
+        """verbose: 0=silent, 1=one line per epoch, 2=epoch + example-level every eval_every."""
+        import time as _time
         Xm = mx.array(np.asarray(X), dtype=mx.float32)
         Yn = np.asarray(Y).astype(np.int32)
         if self.ta is None or not incremental:
@@ -141,7 +143,8 @@ class CoalescedTsetlinMachine(DenseTsetlinMachine):
             self._init_params(Xm.shape[1])
         lits = self._literals(Xm)
         n = Xm.shape[0]
-        for _ in range(epochs):
+        t0 = _time.time()
+        for ep in range(epochs):
             idx = np.arange(n)
             if shuffle:
                 self._rng.shuffle(idx)
@@ -149,5 +152,10 @@ class CoalescedTsetlinMachine(DenseTsetlinMachine):
                 self._update_example(lits[int(i)], int(Yn[i]))
                 if (step + 1) % eval_every == 0:
                     mx.eval(self.ta, self.W)
+                    if verbose >= 2:
+                        print(f"  ep {ep+1}/{epochs}  ex {step+1}/{n}  "
+                              f"({_time.time()-t0:.0f}s)", flush=True)
             mx.eval(self.ta, self.W)
+            if verbose >= 1:
+                print(f"  epoch {ep+1}/{epochs}  ({_time.time()-t0:.0f}s)", flush=True)
         return self
