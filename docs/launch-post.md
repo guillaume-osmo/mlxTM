@@ -171,13 +171,14 @@ TM running on Apple's GPU, how far does *feature engineering* move the needle?
 | ECFP-2048 **count** → thermometer ×3 | 0.976 | 0.933 |
 | RDKit2D-217 → RPCholesky-128 → thermometer | 0.973 | 0.887 |
 | Osmordred-3585 → RPCholesky-1024 → thermometer | **0.980** | 0.913 |
-| molFTP 27-d aggregate → thermometer | 0.960 | 0.916 |
-| molFTP per-key, full 28k–66k ×2-bit | 0.969 | **0.943** |
-| molFTP per-key → **feature-hash 8192** ×2-bit | 0.970 | 0.940 |
-| molFTP per-key → RPCholesky-1024 ×2-bit | 0.956 | 0.828 |
+| curated molFTP 27-d aggregate → thermometer | 0.956 | 0.918 |
+| curated molFTP per-key → **feature-hash 8192** ×2-bit | 0.971 | **0.940** |
+| curated molFTP per-key → RPCholesky-1024 ×2-bit | 0.953 | 0.827 |
 
-*Read it as:* feature hashing keeps the full molFTP signal (0.940 ≈ full 0.943) and beats ECFP on
-MOR; RPCholesky on those sparse keys throws signal away (0.828). Net for lakes, magnet for needles.
+*Read it as:* feature-hashing the 28k–66k molFTP keys into 8,192 buckets keeps the signal and
+**beats ECFP on MOR** (0.940 vs 0.933); RPCholesky on those sparse keys throws signal away (0.827).
+Net for lakes, magnet for needles. *(We dropped the unhashed "full 28k–66k" representation — tens of
+thousands of features for ~1,500 molecules is an overfit trap, not an honest baseline.)*
 
 **On the actual Tsetlin Machine** — extending the
 [TM-QSAR-Benchmark](https://pubs.acs.org/doi/10.1021/acs.jcim.5c03109)'s **ECFP-2048 → TM** baseline
@@ -202,11 +203,13 @@ weaker; it needs its ECFP partner. The meta-lesson holds: with a rule-learner, *
 the molecule matters more than the model**, and there's no free lunch across targets. A permutation
 test confirmed no leakage.
 
-> **vs. the paper.** The TM-QSAR-Benchmark's headline (MOR ECFP **0.93**) uses a heavier,
-> Optuna-tuned **1600-clause / 50-epoch** TM under grouped CV; our table above is a lighter, fixed
-> **400-clause** GPU run that trades a little raw accuracy for speed and interpretability. The point
-> here is the *feature* axis they didn't explore — molFTP and ECFP+BCFP Sort&Slice both clear their
-> ECFP→TM baseline. A clause-for-clause rematch at their config is the natural next experiment.
+> **vs. the paper.** The TM-QSAR-Benchmark reports **five** opioid/CYP classification targets — ECFP,
+> random split: **MOR 0.93, DOR 0.91, KOR 0.92, CYP3A4 0.92, CYP2D6 0.72** — using a heavier,
+> Optuna-tuned **1600-clause / 50-epoch** TM under grouped CV. Our table above (MDR1 — *not* in their
+> classification set — and MOR) is a lighter, fixed **400-clause** GPU run that trades a little raw
+> accuracy for speed and interpretability. The point here is the *feature* axis they didn't explore:
+> molFTP and ECFP+BCFP Sort&Slice both clear the ECFP→TM baseline. A clause-for-clause rematch across
+> all five targets at their config is the natural next experiment.
 
 ## A cheat-sheet for the ML crowd
 
