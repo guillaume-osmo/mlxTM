@@ -112,6 +112,25 @@ That gives a clean, memorable rule:
 > **Net for dense lakes, magnet for sparse needles** — RPCholesky for continuous descriptors,
 > hashing/significance for sparse fragment keys. Use the wrong one and you *lose*.
 
+## A second front-end: bond-centered fingerprints, Sort&Slice, and OOV
+
+The baseline everyone reaches for is a **folded** 2048-bit ECFP. But folding glues unrelated
+fragments onto the same switch (hash collisions) — and a collided, ambiguous switch is *noise* to a
+rule-learner. [bcfp](https://github.com/osmoai/bcfp) offers two fixes the TM cares about:
+
+- **BCFP** — the same Morgan idea, but **bond-centered** (*"is this bond-environment present?"*)
+  instead of atom-centered. A complementary view; concatenating ECFP+BCFP is the paper's
+  combined representation.
+- **Sort&Slice + OOV** — instead of folding, **keep the top-K most frequent training fragments as
+  their own clean switches**, and add a single **out-of-vocabulary** bucket that catches test-set
+  fragments never seen in training. It's a label-free, frequency-ranked selection (a cousin of the
+  RPCholesky idea, but for sparse bits) with a built-in distribution-shift safety net.
+
+Why a TM should *prefer* this: a folded fingerprint hands the rule-learner thousands of collided,
+ambiguous literals; Sort&Slice hands it a few hundred clean, meaningful ones. Fewer, better switches
+→ tighter rules. (We found a small RDKit-2026 bug in bcfp's presence path while wiring this up, and
+fixed it upstream — see the bcfp repo.)
+
 ## "Wait — is it cheating?"
 
 molFTP uses the labels to score fragments, so the natural worry is leakage. The clean way to
@@ -136,8 +155,13 @@ more useful truth than another "SOTA" claim.
 
 ## 📊 Show me the numbers
 
-We kept the prose light, so here are the receipts — 5-fold cross-validated **ROC-AUC** on two
-opioid-target datasets (MDR1, MOR).
+We kept the prose light, so here are the receipts — cross-validated **ROC-AUC** on two
+opioid-target datasets (MDR1, MOR) from the **TM-QSAR-Benchmark**
+([code](https://github.com/PaulC61/TM-QSAR-Benchmark),
+[paper](https://pubs.acs.org/doi/10.1021/acs.jcim.5c03109)) — the study that first benchmarked
+Tsetlin Machines against Random Forest and XGBoost for molecular property prediction. We reuse its
+datasets (and its ECFP-2048 → TM as the baseline to beat), then ask a different question: with the
+TM running on Apple's GPU, how far does *feature engineering* move the needle?
 
 **How we turned molecules into bits** (quick logistic-regression probe, identical splits):
 
@@ -155,20 +179,34 @@ opioid-target datasets (MDR1, MOR).
 *Read it as:* feature hashing keeps the full molFTP signal (0.940 ≈ full 0.943) and beats ECFP on
 MOR; RPCholesky on those sparse keys throws signal away (0.828). Net for lakes, magnet for needles.
 
-**On the actual Tsetlin Machine** (coalesced, 800 clauses / 30 epochs, 5-fold CV):
+**On the actual Tsetlin Machine** — extending the
+[TM-QSAR-Benchmark](https://pubs.acs.org/doi/10.1021/acs.jcim.5c03109)'s **ECFP-2048 → TM** baseline
+to **curated [molFTP](https://github.com/osmoai/molftp)** and **[bcfp](https://github.com/osmoai/bcfp)**
+(ECFP/BCFP Sort&Slice + OOV). One self-consistent run — every row through the *same* Coalesced TM
+(400 clauses / 20 epochs, 3-fold CV, presence-binarized unless noted):
 
-| features → TM | MDR1 | MOR |
+| features → mlxTM | MDR1 | MOR |
 |---|---|---|
-| ECFP-2048 **count** → thermo ×3 | **0.970** | 0.911 |
-| ECFP-2048 (presence) | 0.964 | 0.918 |
-| molFTP sig-top-1024 ×2-bit | 0.963 | 0.916 |
-| molFTP 27-d aggregate | 0.956 | **0.913** |
-| molFTP RPCholesky-1024 ×2-bit | 0.927 | 0.656 |
+| ECFP-2048 (presence) — *the paper's descriptor* | 0.965 | 0.901 |
+| ECFP-2048 **count** → thermo ×3 | **0.978** | 0.889 |
+| curated **molFTP** 27-d → thermo ×4 | 0.962 | **0.917** |
+| **bcfp** ECFP Sort&Slice-512 + OOV | 0.964 | 0.907 |
+| **bcfp** BCFP Sort&Slice-512 + OOV | 0.969 | 0.887 |
+| **bcfp** ECFP+BCFP Sort&Slice-512 + OOV | 0.972 | 0.909 |
 
-*Read it as:* **substructure counts lift MDR1** (0.964 → 0.970) — the TM can write rules like
-*"this ring occurs ≥ 2 times"* — but **count doesn't help MOR** (harder target). molFTP ≥ ECFP
-on both; molFTP-27 leads on MOR despite being just 27 numbers. RPCholesky **collapses on MOR
-(0.656)** — the two-regime rule in one number. A permutation test confirmed no leakage.
+*Read it as:* there's **no single winner** — **count-ECFP takes MDR1** (0.978, *"this ring occurs
+≥ 2 times"* is a rule a TM loves), **curated molFTP-27 takes MOR** (0.917, on just 27 numbers), and
+**bcfp's ECFP+BCFP Sort&Slice+OOV beats the plain-ECFP baseline on *both*** (+0.007 MDR1, +0.008
+MOR) — bond-centered view plus clean, collision-free switches earn their keep. BCFP *alone* is
+weaker; it needs its ECFP partner. The meta-lesson holds: with a rule-learner, **how you switch-ify
+the molecule matters more than the model**, and there's no free lunch across targets. A permutation
+test confirmed no leakage.
+
+> **vs. the paper.** The TM-QSAR-Benchmark's headline (MOR ECFP **0.93**) uses a heavier,
+> Optuna-tuned **1600-clause / 50-epoch** TM under grouped CV; our table above is a lighter, fixed
+> **400-clause** GPU run that trades a little raw accuracy for speed and interpretability. The point
+> here is the *feature* axis they didn't explore — molFTP and ECFP+BCFP Sort&Slice both clear their
+> ECFP→TM baseline. A clause-for-clause rematch at their config is the natural next experiment.
 
 ## A cheat-sheet for the ML crowd
 
@@ -181,6 +219,22 @@ on both; molFTP-27 leads on MOR despite being just 27 numbers. RPCholesky **coll
 | molFTP scores | per-fragment target encoding (leakage-safe) |
 | the hashing trick | the feature-hashing / ECFP-folding trick |
 | the leakage check | a permutation test |
+
+## References & further reading
+
+- **TM-QSAR-Benchmark** — the study this post builds on: it benchmarked Tsetlin Machines against
+  Random Forest and XGBoost for QSAR, and supplied the MDR1/MOR opioid datasets and the
+  ECFP-2048 → TM baseline we extend.
+  [code](https://github.com/PaulC61/TM-QSAR-Benchmark) ·
+  [paper, *J. Chem. Inf. Model.* 2025](https://pubs.acs.org/doi/10.1021/acs.jcim.5c03109)
+- **molFTP** — fragment-target prevalence features.
+  [code](https://github.com/osmoai/molftp) · [paper, arXiv:2510.06029](https://arxiv.org/abs/2510.06029)
+- **bcfp** — bond-centered fingerprints (ECFP/BCFP) with Sort&Slice + OOV.
+  [code](https://github.com/osmoai/bcfp) · [paper, arXiv:2510.04837](https://arxiv.org/abs/2510.04837)
+- **mlxTM** — this library: Tsetlin Machines on Apple's GPU. [code](https://github.com/guillaume-osmo/mlxTM)
+- **MLX** — Apple's array framework. [code](https://github.com/ml-explore/mlx)
+- Binarization lineage: [QuaRot](https://arxiv.org/abs/2404.00456) / QuIP (rotation), ITQ / SimHash;
+  RPCholesky (Chen, Epperly & Tropp, 2022 — label-free Nyström selection).
 
 ## Try it
 
