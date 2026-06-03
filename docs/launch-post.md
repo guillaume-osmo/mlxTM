@@ -36,9 +36,11 @@ The good Tsetlin libraries ([cair/tmu](https://github.com/cair/tmu),
 won't even compile on Apple Silicon. So we rewrote the whole thing in Apple's
 [MLX](https://github.com/ml-explore/mlx) / Metal, from scratch.
 
-`mlxTM` ships five flavors — a dense one, a bit-packed one (32 switches per machine word), a
-weighted "coalesced" one, a **fully bit-packed trainer** (we taught a Metal kernel to *count in
-binary with carries* — the GPU trick that makes training fast), and a scikit-learn-style wrapper.
+`mlxTM` ships six flavors — a dense one, a bit-packed one (32 switches per machine word), a
+weighted "coalesced" one, a **fully bit-packed mini-batch trainer** (we taught a Metal kernel to
+*count in binary with carries* — the GPU trick that makes training fast), an **online trainer**
+(per-example updates looped *inside* a Metal kernel, one threadgroup per class — exact online
+learning at GPU speed, with no host round-trip per molecule), and a scikit-learn-style wrapper.
 
 ```python
 from mlx_tm import DenseTsetlinMachine
@@ -49,7 +51,10 @@ tm.predict(X_test)
 How'd it do? It nails the classic **Noisy-XOR** sanity test (100%), and runs **~14× faster to
 train, ~46× faster to predict** than a CPU baseline — all on the laptop's GPU. The bit-packed
 trick gives another 6–13×. (We checked it bit-for-bit against a plain NumPy reference, so this
-isn't hand-waving.)
+isn't hand-waving.) And when the mini-batch shortcut costs too much accuracy — it does, on
+rare-positive targets — the **online trainer** keeps the *exact* per-example update while still
+running **6–24× faster than the naïve per-example loop**, by doing the whole epoch inside one
+Metal launch per chunk.
 
 ## The real game: a rule-learner only eats switches
 
@@ -224,18 +229,43 @@ tuning**) on the raw vectors; the paper's other baseline. **Bold = best of ours 
 | bcfp ECFP+BCFP Sort&Slice + OOV | 0.979 | 0.932 | 0.919 | 0.929 | 0.877 | 0.668 |
 | *paper TM — ECFP, tuned 1600-clause* | — | 0.93 | 0.91 | 0.92 | 0.92 | 0.72 |
 
-![ROC-AUC by target — four models (paper TM, XGBoost, LR, mlxTM)](figures/radar_vs_paper.png)
+**The fifth model — Pairwise Difference Learning (PDL)** ([Karim-53/pdll](https://github.com/Karim-53/pdll)):
+instead of predicting a molecule's label, it learns whether *two* molecules share one — from the pair
+features `[Xa, Xb, Xa−Xb]` — then recovers a label by averaging the verdict over a query's nearest
+training "anchors." We use the efficient variant (sampled pairs, not all *n*², + k-NN anchors at
+predict). **Bold = best of ours per target:**
 
-*Read the four rings:*
+| features → PDL (pairwise) | MDR1 | MOR | DOR | KOR | CYP3A4 | CYP2D6 |
+|---|---|---|---|---|---|---|
+| ECFP-2048 (presence) | 0.967 | 0.906 | 0.881 | 0.900 | 0.843 | 0.695 |
+| ECFP-2048 count | **0.976** | 0.905 | 0.886 | 0.903 | 0.868 | 0.692 |
+| curated molFTP 27-d | 0.962 | **0.920** | **0.893** | **0.911** | 0.818 | 0.637 |
+| bcfp ECFP Sort&Slice + OOV | 0.974 | 0.903 | 0.886 | 0.907 | 0.861 | 0.676 |
+| bcfp BCFP Sort&Slice + OOV | 0.970 | 0.902 | 0.875 | 0.900 | 0.882 | **0.767** |
+| bcfp ECFP+BCFP Sort&Slice + OOV | 0.972 | 0.912 | 0.883 | 0.907 | **0.892** | 0.761 |
+| *paper TM — ECFP, tuned 1600-clause* | — | 0.93 | 0.91 | 0.92 | 0.92 | 0.72 |
 
-- **We clear the paper on the opioids.** An *untuned* **XGBoost** on bcfp/ECFP features edges the
+*PDL is the **CYP2D6 specialist**. On the hardest, most imbalanced target (1.4% actives) it reaches
+**0.767 with bcfp-BCFP — clearing the paper's Optuna-tuned TM (0.72)** and every other model here.
+Pairwise comparison turns a few hundred actives into tens of thousands of informative pairs, exactly
+the regime where a per-molecule classifier starves.*
+
+![ROC-AUC by target — five models (paper TM, XGBoost, LR, mlxTM, PDL) vs the paper](figures/radar_vs_paper.png)
+
+*Read the five rings:*
+
+- **We clear the paper on 4 of its 5 targets.** An *untuned* **XGBoost** on bcfp/ECFP features edges the
   paper's *Optuna-tuned* 1600-clause TM on **MOR (0.933 vs 0.93), DOR (0.924 vs 0.91) and KOR (0.929 vs
-  0.92)**, with plain **LR** a hair behind. The margins are small — which *is* the headline: it
-  **confirms the paper's own thesis that the Tsetlin Machine is competitive with gradient boosting.**
-  On the imbalanced **CYPs** the tuned TM still leads (CYP3A4 0.92, CYP2D6 0.72).
+  0.92)**, with plain **LR** a hair behind — small margins that *are* the headline: they **confirm the
+  paper's own thesis that the Tsetlin Machine is competitive with gradient boosting.** Only **CYP3A4**
+  (0.92) stays with the tuned TM.
+- **PDL takes the hardest target.** On **CYP2D6** (1.4% actives) **Pairwise Difference Learning reaches
+  0.767 vs the paper's 0.72** — the one place a per-molecule model can't keep up with one that learns
+  from pairs. Net across the five targets: the paper's tuned TM is out front on exactly one (CYP3A4).
 - **Best feature is model-dependent.** The **TM** likes **molFTP-27** (significance-scored,
-  rule-friendly), **LR** likes **plain ECFP**, **XGBoost** likes **bcfp ECFP Sort&Slice**. Count-ECFP
-  only helps MDR1, and BCFP needs its ECFP partner. No free lunch across model × feature × target.
+  rule-friendly), **LR** likes **plain ECFP**, **XGBoost** likes **bcfp ECFP Sort&Slice**, and **PDL**'s
+  CYP2D6 win rides **bcfp-BCFP**. Count-ECFP only helps MDR1, and BCFP needs its ECFP partner. No free
+  lunch across model × feature × target.
 - **What the minimal mlxTM is for.** At 400 clauses it trails the heavier models by ~0.01–0.03 — a
   model-strength gap, not a feature gap — but it's the only one that hands you **interpretable if-then
   rules**, runs on **Apple's GPU**, and needs **no HP search**. (Permutation test: no leakage.)
@@ -263,6 +293,8 @@ tuning**) on the raw vectors; the paper's other baseline. **Bold = best of ours 
   [code](https://github.com/osmoai/molftp) · [paper, arXiv:2510.06029](https://arxiv.org/abs/2510.06029)
 - **bcfp** — bond-centered fingerprints (ECFP/BCFP) with Sort&Slice + OOV.
   [code](https://github.com/osmoai/bcfp) · [paper, arXiv:2510.04837](https://arxiv.org/abs/2510.04837)
+- **PDL** — Pairwise Difference Learning, the pairwise-comparison reduction we use as a fifth model
+  (the CYP2D6 specialist). [code](https://github.com/Karim-53/pdll)
 - **mlxTM** — this library: Tsetlin Machines on Apple's GPU. [code](https://github.com/guillaume-osmo/mlxTM)
 - **MLX** — Apple's array framework. [code](https://github.com/ml-explore/mlx)
 - Binarization lineage: [QuaRot](https://arxiv.org/abs/2404.00456) / QuIP (rotation), ITQ / SimHash;
@@ -276,5 +308,5 @@ pip install -e .            # macOS / Apple Silicon only (MLX has no Linux/Windo
 python examples/noisy_xor.py
 ```
 
-Five GPU backends, the feature utilities (binarizers, RPCholesky), 27 passing tests, MIT-licensed.
+Six GPU backends, the feature utilities (binarizers, RPCholesky), 31 passing tests, MIT-licensed.
 Kick the tires, and tell me where it breaks.
