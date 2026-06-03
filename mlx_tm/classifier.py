@@ -60,7 +60,14 @@ class TMClassifierMLX:
             return BitPackedTsetlinMachine(**common)
         if self.backend == "bitplane":
             from .bitpacked_train import BitPlaneTsetlinMachine
-            return BitPlaneTsetlinMachine(batch_size=self.batch_size, **common)
+            return BitPlaneTsetlinMachine(batch_size=self.batch_size,
+                                          weighted_clauses=self.weighted_clauses,
+                                          max_weight=self.max_weight, **common)
+        if self.backend == "online":
+            from .online import OnlineTsetlinMachine
+            return OnlineTsetlinMachine(weighted_clauses=self.weighted_clauses,
+                                        max_weight=self.max_weight,
+                                        chunk=self.batch_size or 256, **common)
         if self.backend == "coalesced":
             from .coalesced import CoalescedTsetlinMachine
             return CoalescedTsetlinMachine(weighted_clauses=self.weighted_clauses,

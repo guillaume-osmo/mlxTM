@@ -9,6 +9,9 @@ DenseTsetlinMachine      states as MLX tensors; clause eval is a matmul + step.
 BitPackedTsetlinMachine  uint32 bit-packed literals + a Metal clause-eval kernel.
 CoalescedTsetlinMachine  one shared clause pool + per-class signed integer weights.
 BitPlaneTsetlinMachine   fully bit-packed training (CUDA inc/dec carry ops on Metal).
+OnlineTsetlinMachine     CUDA-style online training: examples looped *inside* a Metal
+                         kernel (one threadgroup/class), exact per-example updates at
+                         batch-launch speed — fast without the mini-batch accuracy loss.
 TMClassifierMLX          tmu / PyTsetlinMachineCUDA-compatible wrapper.
 
 Utilities
@@ -22,6 +25,7 @@ from .dense import DenseTsetlinMachine
 from .bitpacked import BitPackedTsetlinMachine, pack_bits_uint32, packed_eval
 from .coalesced import CoalescedTsetlinMachine
 from .bitpacked_train import BitPlaneTsetlinMachine
+from .online import OnlineTsetlinMachine
 from .classifier import TMClassifierMLX
 from .numpy_ref import NumpyTM
 from .binarize import (
@@ -41,6 +45,7 @@ __all__ = [
     "BitPackedTsetlinMachine",
     "CoalescedTsetlinMachine",
     "BitPlaneTsetlinMachine",
+    "OnlineTsetlinMachine",
     "TMClassifierMLX",
     "NumpyTM",
     "ThermometerBinarizer",

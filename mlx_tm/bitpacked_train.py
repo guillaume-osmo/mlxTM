@@ -50,6 +50,8 @@ class BitPlaneTsetlinMachine:
         number_of_state_bits: int = 8,
         boost_true_positive_feedback: bool = False,
         batch_size: int = 0,           # 0 -> per-example online; >1 -> batched kernel
+        weighted_clauses: bool = False,  # coalesced shared pool + learned per-class weights
+        max_weight: int = 255,
         seed: int = 0,
     ):
         self.n_clauses_req = int(n_clauses)
@@ -60,9 +62,12 @@ class BitPlaneTsetlinMachine:
         self.N = 1 << (number_of_state_bits - 1)          # include iff counter >= N
         self.boost = bool(boost_true_positive_feedback)
         self.batch_size = int(batch_size)
+        self.weighted_clauses = bool(weighted_clauses)
+        self.max_weight = int(max_weight)
         self.seed = int(seed)
         self._rng = np.random.RandomState(seed)
         self.ta_state = None                              # (C*NCHUNKS*STATE_BITS,) uint32
+        self.W = None                                     # (n_classes, C) int32, weighted only
         self.f = None
         self.L = None
 
@@ -72,6 +77,14 @@ class BitPlaneTsetlinMachine:
         return (self.L + 31) // 32
 
     def _build_partition(self):
+        if self.weighted_clauses:
+            # Coalesced: ONE shared clause pool; every class votes on every clause via a
+            # learned signed integer weight (sign = direction, magnitude = strength). No
+            # fixed +/- partition, so class_of/sign/S are unused — steering is W's sign.
+            self.C = self.n_clauses_req
+            self.class_of = self.sign = self.S = None
+            self.W = (mx.random.randint(0, 2, shape=(self.n_classes, self.C)) * 2 - 1).astype(mx.int32)
+            return
         cpc = max(1, self.n_clauses_req // self.n_classes)
         self.C = cpc * self.n_classes                     # whole multiple of n_classes
         class_of = np.arange(self.C) // cpc
@@ -107,7 +120,7 @@ class BitPlaneTsetlinMachine:
         state = state * valid_tile[:, None]               # padding planes -> 0
         self.ta_state = mx.array(state.reshape(-1))       # (C*NCHUNKS*STATE_BITS,)
         self._valid = mx.array(valid)
-        mx.eval(self.ta_state)
+        mx.eval(self.ta_state, self.W) if self.weighted_clauses else mx.eval(self.ta_state)
 
     @staticmethod
     def _literals(X: np.ndarray) -> np.ndarray:
@@ -140,7 +153,8 @@ class BitPlaneTsetlinMachine:
 
     def decision_function(self, X) -> np.ndarray:
         lits = self._literals(np.asarray(X).astype(np.int32))
-        class_sums = (self.S @ self._eval(lits, predict=True)).T          # (B, n_classes)
+        wmat = self.W.astype(mx.float32) if self.weighted_clauses else self.S
+        class_sums = (wmat @ self._eval(lits, predict=True)).T            # (B, n_classes)
         mx.eval(class_sums)
         return np.array(class_sums)
 
@@ -234,6 +248,74 @@ class BitPlaneTsetlinMachine:
                 mx.eval(self.ta_state)
         return self
 
+    def _fit_batched_weighted(self, Xp_mx, Yn, epochs, shuffle, eval_every):
+        """Batched COALESCED update: shared clause pool + learned per-class weights.
+
+        Same one-Metal-launch-per-batch TA feedback as `_fit_batched` (the kernel draws
+        the per-literal 1/s randomness on-device, so we never materialise (C,L,B)). The
+        only addition over the partitioned path is the weight bookkeeping, all on the
+        host: class sums use the gathered weight rows W[target]/W[neg] (per example),
+        Type I/II steering follows each clause's weight *sign* for that example, and the
+        +/-1 weight nudges are accumulated across the whole batch with a one-hot @ mask
+        matmul (cheap: n_classes x B x C) before a single clip. Mirrors
+        coalesced.CoalescedTsetlinMachine._update_example, evaluated batch-at-once."""
+        B = self.batch_size
+        n = Yn.shape[0]
+        inv_s = 1.0 / self.s
+        mw = self.max_weight
+        cls = mx.arange(self.n_classes)
+        for _ in range(epochs):
+            idx = np.arange(n)
+            if shuffle:
+                self._rng.shuffle(idx)
+            for start in range(0, n, B):
+                bidx = idx[start:start + B]
+                pad = B - len(bidx)
+                if pad:
+                    bidx = np.concatenate([bidx, np.full(pad, bidx[0], dtype=bidx.dtype)])
+                Xb = Xp_mx[mx.array(bidx)]                                    # (B, NCHUNKS)
+                tgt = Yn[bidx]
+                neg = np.array([self._rng_other(int(t)) for t in tgt])       # (B,) != tgt
+                # clause outputs at batch-start state (one packed-eval launch for all B)
+                fired = clause_eval_packed(self._action_words(), Xb.reshape(-1),
+                                           self.C, B, self.n_chunks)          # (C, B)
+                firedT = fired.T                                             # (B, C)
+                Wf = self.W.astype(mx.float32)                              # (n_classes, C)
+                Wt = Wf[mx.array(tgt)]                                      # (B, C) target row/ex
+                Wn = Wf[mx.array(neg)]                                      # (B, C) neg row/ex
+                cs_t = mx.clip((Wt * firedT).sum(axis=1), -self.T, self.T)   # (B,)
+                cs_n = mx.clip((Wn * firedT).sum(axis=1), -self.T, self.T)
+                up_t = (self.T - cs_t) / (2.0 * self.T)                      # (B,)
+                up_n = (self.T + cs_n) / (2.0 * self.T)
+                wt_pos = (Wt >= 0).T                                        # (C, B)
+                wn_pos = (Wn >= 0).T
+                sel_t = mx.random.uniform(shape=(self.C, B)) <= up_t[None, :]
+                sel_n = mx.random.uniform(shape=(self.C, B)) <= up_n[None, :]
+                tI = (sel_t & wt_pos) | (sel_n & (~wn_pos))                 # (C, B)  target+ / neg-
+                tII = (sel_t & (~wt_pos)) | (sel_n & wn_pos)                # (C, B)  target- / neg+
+                firedb = fired > 0
+                if pad:                                                     # padded cols -> no-op
+                    keep = mx.array(np.concatenate([np.ones(B - pad), np.zeros(pad)]).astype(bool))
+                    tI = tI & keep[None, :]; tII = tII & keep[None, :]; firedb = firedb & keep[None, :]
+                # ---- weight nudges, summed over the batch then clipped once ----
+                inc = (mx.random.uniform(shape=(self.C, B)) <= up_t[None, :]) & wt_pos & firedb
+                dec = (mx.random.uniform(shape=(self.C, B)) <= up_n[None, :]) & (~wn_pos) & firedb
+                oh_t = (cls[:, None] == mx.array(tgt)[None, :]).astype(mx.float32)   # (n_classes, B)
+                oh_n = (cls[:, None] == mx.array(neg)[None, :]).astype(mx.float32)
+                dW = oh_t @ inc.T.astype(mx.float32) - oh_n @ dec.T.astype(mx.float32)  # (n_classes, C)
+                self.W = mx.clip(self.W + dW.astype(mx.int32), -mw, mw).astype(mx.int32)
+                # ---- TA feedback: reuse the batched bit-plane kernel unchanged ----
+                seed = int(self._rng.randint(1, 2 ** 31 - 1))
+                self.ta_state = bitplane_update_batch(
+                    self.ta_state, Xb.reshape(-1),
+                    fired.astype(mx.uint8).reshape(-1),
+                    tI.astype(mx.uint8).reshape(-1),
+                    tII.astype(mx.uint8).reshape(-1),
+                    self._valid, seed, inv_s,
+                    self.C, B, self.n_chunks, self.number_of_state_bits, self.boost)
+                mx.eval(self.ta_state, self.W)
+        return self
+
     def fit(self, X, Y, epochs: int = 1, incremental: bool = False,
             shuffle: bool = True, eval_every: int = 64):
         Xn = np.asarray(X).astype(np.int32)
@@ -245,6 +327,8 @@ class BitPlaneTsetlinMachine:
         Xp_all = self._pack_examples(lits)                               # (n, NCHUNKS) uint32
         Xp_mx = mx.array(Xp_all)
         if self.batch_size and self.batch_size > 1:
+            if self.weighted_clauses:
+                return self._fit_batched_weighted(Xp_mx, Yn, epochs, shuffle, eval_every)
             return self._fit_batched(Xp_mx, Yn, epochs, shuffle, eval_every)
         n = Xn.shape[0]
         for _ in range(epochs):
