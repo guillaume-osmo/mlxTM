@@ -197,20 +197,35 @@ presence-binarized unless noted). **Bold = best of ours per target:**
 | bcfp ECFP+BCFP Sort&Slice + OOV | 0.972 | 0.909 | 0.890 | 0.902 | 0.862 | **0.701** |
 | *paper TM — ECFP, tuned 1600-clause* | — | 0.93 | 0.91 | 0.92 | 0.92 | 0.72 |
 
-![ROC-AUC by target — mlxTM (our features) vs the paper's tuned ECFP→TM](figures/radar_vs_paper.png)
+**The LR variant** — the same six representations through a plain **logistic regression** on the *raw*
+vectors (no binarization; the simple-baseline role RF/XGBoost play in the paper). **Bold = best of
+ours per target:**
 
-*Read it two ways:*
+| features → Logistic Regression | MDR1 | MOR | DOR | KOR | CYP3A4 | CYP2D6 |
+|---|---|---|---|---|---|---|
+| ECFP-2048 (presence) | **0.976** | **0.923** | **0.908** | **0.918** | **0.887** | 0.675 |
+| ECFP-2048 count | 0.975 | 0.920 | 0.900 | 0.915 | 0.880 | 0.679 |
+| curated molFTP 27-d | 0.961 | 0.912 | 0.893 | 0.904 | 0.841 | 0.624 |
+| bcfp ECFP Sort&Slice + OOV | 0.973 | 0.917 | 0.890 | 0.906 | 0.885 | 0.677 |
+| bcfp BCFP Sort&Slice + OOV | 0.971 | 0.904 | 0.868 | 0.894 | 0.877 | 0.687 |
+| bcfp ECFP+BCFP Sort&Slice + OOV | 0.975 | 0.918 | 0.889 | 0.912 | 0.882 | **0.693** |
+| *paper TM — ECFP, tuned 1600-clause* | — | 0.93 | 0.91 | 0.92 | 0.92 | 0.72 |
 
-- **Features (within our TM):** **curated molFTP-27 wins all three opioids** (MOR/DOR/KOR), beating
-  the ECFP baseline; on the imbalanced CYPs it splits — ECFP edges **CYP3A4** (~2% positives) while
-  molFTP / bcfp-combo take the hard **CYP2D6** (0.70 vs ECFP's 0.66). Count-ECFP only helps MDR1.
-  The meta-lesson holds: with a rule-learner, **how you switch-ify the molecule matters**, and there's
-  no free lunch across targets. (Permutation test: no leakage.)
-- **vs. the paper (the gray ring in the radar):** their **Optuna-tuned 1600-clause / 50-epoch** TM
-  still leads our **fixed 400-clause** GPU run by **0.01–0.03 on every target** — a *model-strength*
-  gap, not a feature gap (our best feature beats their ECFP descriptor everywhere it matters). Closing
-  it is one knob away: a **clause-for-clause rematch** at their config — and since molFTP already
-  clears ECFP, that's the experiment most likely to flip the radar.
+![ROC-AUC by target — minimal models (LR, mlxTM) vs the paper's tuned ECFP→TM](figures/radar_vs_paper.png)
+
+*Read it three ways:*
+
+- **Best feature is model-dependent.** The **TM** likes **molFTP-27** (significance-scored, rule-friendly
+  — it wins all three opioids); **LR** likes **plain ECFP** (best on 5 of 6). Count-ECFP only helps MDR1,
+  and BCFP needs its ECFP partner. No free lunch across model × target.
+- **LR is the surprise.** A trivial logistic regression on raw ECFP **nearly matches the paper's
+  Optuna-tuned 1600-clause TM** on the opioids — MOR 0.923 vs 0.93, DOR 0.908 vs 0.91, KOR 0.918 vs
+  0.92 — and edges out our minimal 400-clause TM. On these targets, **a simple linear model is hard to
+  beat.**
+- **vs. the paper (the gray ring).** Both our *minimal* models trail the tuned TM by ~0.01–0.03 — a
+  *model-strength* gap (more clauses + HP search), not a feature gap; LR closes nearly all of it for
+  free. The TM's real edge here isn't a SOTA bump — it's **interpretable if-then rules running on
+  Apple's GPU.** (Permutation test: no leakage.)
 
 ## A cheat-sheet for the ML crowd
 
