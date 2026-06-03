@@ -211,21 +211,34 @@ ours per target:**
 | bcfp ECFP+BCFP Sort&Slice + OOV | 0.975 | 0.918 | 0.889 | 0.912 | 0.882 | **0.693** |
 | *paper TM — ECFP, tuned 1600-clause* | — | 0.93 | 0.91 | 0.92 | 0.92 | 0.72 |
 
-![ROC-AUC by target — minimal models (LR, mlxTM) vs the paper's tuned ECFP→TM](figures/radar_vs_paper.png)
+**And XGBoost** — the same features through gradient boosting (default `n_estimators=100`, **no
+tuning**) on the raw vectors; the paper's other baseline. **Bold = best of ours per target:**
 
-*Read it three ways:*
+| features → XGBoost | MDR1 | MOR | DOR | KOR | CYP3A4 | CYP2D6 |
+|---|---|---|---|---|---|---|
+| ECFP-2048 (presence) | 0.972 | 0.931 | 0.917 | 0.927 | 0.868 | 0.641 |
+| ECFP-2048 count | 0.979 | 0.931 | 0.924 | 0.929 | 0.862 | 0.621 |
+| curated molFTP 27-d | 0.964 | 0.921 | 0.900 | 0.917 | 0.847 | 0.632 |
+| bcfp ECFP Sort&Slice + OOV | **0.982** | **0.933** | 0.919 | **0.929** | 0.867 | 0.628 |
+| bcfp BCFP Sort&Slice + OOV | 0.978 | 0.928 | 0.910 | 0.921 | **0.901** | **0.668** |
+| bcfp ECFP+BCFP Sort&Slice + OOV | 0.979 | 0.932 | 0.919 | 0.929 | 0.877 | 0.668 |
+| *paper TM — ECFP, tuned 1600-clause* | — | 0.93 | 0.91 | 0.92 | 0.92 | 0.72 |
 
-- **Best feature is model-dependent.** The **TM** likes **molFTP-27** (significance-scored, rule-friendly
-  — it wins all three opioids); **LR** likes **plain ECFP** (best on 5 of 6). Count-ECFP only helps MDR1,
-  and BCFP needs its ECFP partner. No free lunch across model × target.
-- **LR is the surprise.** A trivial logistic regression on raw ECFP **nearly matches the paper's
-  Optuna-tuned 1600-clause TM** on the opioids — MOR 0.923 vs 0.93, DOR 0.908 vs 0.91, KOR 0.918 vs
-  0.92 — and edges out our minimal 400-clause TM. On these targets, **a simple linear model is hard to
-  beat.**
-- **vs. the paper (the gray ring).** Both our *minimal* models trail the tuned TM by ~0.01–0.03 — a
-  *model-strength* gap (more clauses + HP search), not a feature gap; LR closes nearly all of it for
-  free. The TM's real edge here isn't a SOTA bump — it's **interpretable if-then rules running on
-  Apple's GPU.** (Permutation test: no leakage.)
+![ROC-AUC by target — four models (paper TM, XGBoost, LR, mlxTM)](figures/radar_vs_paper.png)
+
+*Read the four rings:*
+
+- **We clear the paper on the opioids.** An *untuned* **XGBoost** on bcfp/ECFP features edges the
+  paper's *Optuna-tuned* 1600-clause TM on **MOR (0.933 vs 0.93), DOR (0.924 vs 0.91) and KOR (0.929 vs
+  0.92)**, with plain **LR** a hair behind. The margins are small — which *is* the headline: it
+  **confirms the paper's own thesis that the Tsetlin Machine is competitive with gradient boosting.**
+  On the imbalanced **CYPs** the tuned TM still leads (CYP3A4 0.92, CYP2D6 0.72).
+- **Best feature is model-dependent.** The **TM** likes **molFTP-27** (significance-scored,
+  rule-friendly), **LR** likes **plain ECFP**, **XGBoost** likes **bcfp ECFP Sort&Slice**. Count-ECFP
+  only helps MDR1, and BCFP needs its ECFP partner. No free lunch across model × feature × target.
+- **What the minimal mlxTM is for.** At 400 clauses it trails the heavier models by ~0.01–0.03 — a
+  model-strength gap, not a feature gap — but it's the only one that hands you **interpretable if-then
+  rules**, runs on **Apple's GPU**, and needs **no HP search**. (Permutation test: no leakage.)
 
 ## A cheat-sheet for the ML crowd
 
