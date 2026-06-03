@@ -183,33 +183,34 @@ thousands of features for ~1,500 molecules is an overfit trap, not an honest bas
 **On the actual Tsetlin Machine** — extending the
 [TM-QSAR-Benchmark](https://pubs.acs.org/doi/10.1021/acs.jcim.5c03109)'s **ECFP-2048 → TM** baseline
 to **curated [molFTP](https://github.com/osmoai/molftp)** and **[bcfp](https://github.com/osmoai/bcfp)**
-(ECFP/BCFP Sort&Slice + OOV). One self-consistent run — every row through the *same* Coalesced TM
-(400 clauses / 20 epochs, 3-fold CV, presence-binarized unless noted):
+(ECFP/BCFP Sort&Slice + OOV), across **all five of the paper's opioid/CYP targets** (plus MDR1). One
+self-consistent run — every row through the *same* Coalesced TM (400 clauses / 20 epochs, 3-fold CV,
+presence-binarized unless noted). **Bold = best of ours per target:**
 
-| features → mlxTM | MDR1 | MOR |
-|---|---|---|
-| ECFP-2048 (presence) — *the paper's descriptor* | 0.965 | 0.901 |
-| ECFP-2048 **count** → thermo ×3 | **0.978** | 0.889 |
-| curated **molFTP** 27-d → thermo ×4 | 0.962 | **0.917** |
-| **bcfp** ECFP Sort&Slice-512 + OOV | 0.964 | 0.907 |
-| **bcfp** BCFP Sort&Slice-512 + OOV | 0.969 | 0.887 |
-| **bcfp** ECFP+BCFP Sort&Slice-512 + OOV | 0.972 | 0.909 |
+| features → mlxTM (400-clause) | MDR1 | MOR | DOR | KOR | CYP3A4 | CYP2D6 |
+|---|---|---|---|---|---|---|
+| ECFP-2048 (presence) — *paper's descriptor* | 0.965 | 0.901 | 0.883 | 0.901 | **0.888** | 0.664 |
+| ECFP-2048 count → thermo ×3 | **0.978** | 0.889 | 0.869 | 0.892 | 0.868 | 0.623 |
+| curated molFTP 27-d → thermo ×4 | 0.962 | **0.917** | **0.894** | **0.911** | 0.855 | 0.700 |
+| bcfp ECFP Sort&Slice + OOV | 0.964 | 0.907 | 0.888 | 0.892 | 0.859 | 0.684 |
+| bcfp BCFP Sort&Slice + OOV | 0.969 | 0.887 | 0.872 | 0.884 | 0.868 | 0.671 |
+| bcfp ECFP+BCFP Sort&Slice + OOV | 0.972 | 0.909 | 0.890 | 0.902 | 0.862 | **0.701** |
+| *paper TM — ECFP, tuned 1600-clause* | — | 0.93 | 0.91 | 0.92 | 0.92 | 0.72 |
 
-*Read it as:* there's **no single winner** — **count-ECFP takes MDR1** (0.978, *"this ring occurs
-≥ 2 times"* is a rule a TM loves), **curated molFTP-27 takes MOR** (0.917, on just 27 numbers), and
-**bcfp's ECFP+BCFP Sort&Slice+OOV beats the plain-ECFP baseline on *both*** (+0.007 MDR1, +0.008
-MOR) — bond-centered view plus clean, collision-free switches earn their keep. BCFP *alone* is
-weaker; it needs its ECFP partner. The meta-lesson holds: with a rule-learner, **how you switch-ify
-the molecule matters more than the model**, and there's no free lunch across targets. A permutation
-test confirmed no leakage.
+![ROC-AUC by target — mlxTM (our features) vs the paper's tuned ECFP→TM](figures/radar_vs_paper.png)
 
-> **vs. the paper.** The TM-QSAR-Benchmark reports **five** opioid/CYP classification targets — ECFP,
-> random split: **MOR 0.93, DOR 0.91, KOR 0.92, CYP3A4 0.92, CYP2D6 0.72** — using a heavier,
-> Optuna-tuned **1600-clause / 50-epoch** TM under grouped CV. Our table above (MDR1 — *not* in their
-> classification set — and MOR) is a lighter, fixed **400-clause** GPU run that trades a little raw
-> accuracy for speed and interpretability. The point here is the *feature* axis they didn't explore:
-> molFTP and ECFP+BCFP Sort&Slice both clear the ECFP→TM baseline. A clause-for-clause rematch across
-> all five targets at their config is the natural next experiment.
+*Read it two ways:*
+
+- **Features (within our TM):** **curated molFTP-27 wins all three opioids** (MOR/DOR/KOR), beating
+  the ECFP baseline; on the imbalanced CYPs it splits — ECFP edges **CYP3A4** (~2% positives) while
+  molFTP / bcfp-combo take the hard **CYP2D6** (0.70 vs ECFP's 0.66). Count-ECFP only helps MDR1.
+  The meta-lesson holds: with a rule-learner, **how you switch-ify the molecule matters**, and there's
+  no free lunch across targets. (Permutation test: no leakage.)
+- **vs. the paper (the gray ring in the radar):** their **Optuna-tuned 1600-clause / 50-epoch** TM
+  still leads our **fixed 400-clause** GPU run by **0.01–0.03 on every target** — a *model-strength*
+  gap, not a feature gap (our best feature beats their ECFP descriptor everywhere it matters). Closing
+  it is one knob away: a **clause-for-clause rematch** at their config — and since molFTP already
+  clears ECFP, that's the experiment most likely to flip the radar.
 
 ## A cheat-sheet for the ML crowd
 
